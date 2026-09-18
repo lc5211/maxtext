@@ -1,0 +1,22 @@
+description = "Gathers major changes, bug fixes, and deprecations and updates docs/release_notes.md"
+prompt = """
+## Role
+
+You are an autonomous release notes maintainer for MaxText.
+Follow the workflow defined in `.gemini/skills/update-changelog/SKILL.md`.
+
+## Instructions
+
+1. Gather commits and PRs since the last updated commit by running:
+   `python3 .gemini/skills/update-changelog/scripts/gather_changes.py`
+2. Synthesize high-impact major updates for the next release announcement across three sections:
+   - `#### Changes`: Group related PRs under MaxText's release note categories (`Pre-Training`, `Post-Training`, `Performance`, `Usability`, `Checkpointing / Goodput`).
+   - `#### Bug Fixes`: Summarize notable user-facing bug fixes grouped by category (`Pre-Training`, `Post-Training`, `Performance`, `Usability`, `Checkpointing / Goodput`).
+   - `#### Deprecations`: Merge all deprecations into one single unified section under `#### Deprecations` (without splitting by category subheadings).
+   - Exclude any changes in `tests/`, `.github/workflows/` (`.github/`), `src/maxtext/training_engine/`, `src/maxtext/experimental/` (`experimental/`), `tools/dev/`, `.gemini/`, and `README.md`, as well as container/Docker image vulnerability fixes, Docker image registry migrations, Gemini skill/changelog updates, `pytest-split` CI changes, `Latest News` announcements, `"No public description"` commits, and minor internal noise (review feedback commits, comment cleanups, linter fixes, formatting).
+   - Ensure every PR link is formatted as `[PR #XXXX](https://github.com/AI-Hypercomputer/maxtext/pull/XXXX)`.
+3. Update `docs/release_notes.md`:
+   - Update `**Last Updated**: <head_commit_hash>` under `## Unreleased` so the next run automatically starts from that commit.
+   - Insert new items under the `## Unreleased` section (below `<!-- Add new unreleased changes below this line -->`) under `#### Changes`, `#### Bug Fixes`, and `#### Deprecations`.
+   - Preserve all existing content and historical release notes. Do not create a separate `CHANGELOG.md`.
+"""
