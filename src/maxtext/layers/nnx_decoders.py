@@ -1545,7 +1545,7 @@ class NNXDecoder(nnx.Module):
 
     return y
 
-  def apply_output_head(self, shared_embedding, y, deterministic, model_mode, normalize_y=True):
+  def apply_output_head(self, shared_embedding, y, deterministic, model_mode, normalize_y=True, reduce_mhc=True):
     """Applies final normalization and projects hidden states to logits.
 
     Args:
@@ -1557,9 +1557,24 @@ class NNXDecoder(nnx.Module):
         (decoder_norm) before projecting to logits. Set to False when called from
         Multi-Token Prediction (MTP), which applies its own dedicated final norm
         (mtp_k_final_norm) to avoid double normalization.
+      reduce_mhc: If True (default), collapses the parallel hyper-connection (mHC)
+        streams of a 4D `[batch, seq, mhc_expansion_rate, emb]` hidden state down to
+        3D before normalizing. The decoder keeps its output in the expanded 4D form
+        so downstream consumers (notably MTP) receive the full stream state, which
+        makes this the single place the collapse happens. Set to False when the
+        caller has already reduced the state itself (MTP applies its own
+        `hc_head`).
     """
 
     cfg = self.config
+    if reduce_mhc and getattr(cfg, "mhc_expansion_rate", 1) > 1 and y.ndim >= 4:
+      if cfg.decoder_block in (DecoderBlockType.DEEPSEEK4, DecoderBlockType.DEEPSEEK4.value):
+        y = self.hc_head(y)
+      else:
+        # (batch, length, mhc_expansion_rate, emb_dim) --> (batch, length, emb_dim)
+        _, mhc_reduce_fn = mhc.get_functions(cfg.mhc_expansion_rate)
+        y = mhc_reduce_fn(y)
+
     if normalize_y:
       if cfg.shard_mode == ShardMode.EXPLICIT:
         norm_out_sharding = create_sharding(
@@ -1792,9 +1807,8 @@ class NNXDecoder(nnx.Module):
         decoder_input_embeddings=decoder_input_embeddings,
     )
 
-    mhc_reduce = None
     if hasattr(cfg, "mhc_expansion_rate"):
-      mhc_expand, mhc_reduce = mhc.get_functions(cfg.mhc_expansion_rate)
+      mhc_expand, _ = mhc.get_functions(cfg.mhc_expansion_rate)
       if cfg.mhc_expansion_rate > 1:
         # (batch, length, emb_dim) --> (batch, length, mhc_expansion_rate, emb_dim)
         y = mhc_expand(y)
@@ -2258,14 +2272,12 @@ class NNXDecoder(nnx.Module):
     assert isinstance(y, jax.Array)
 
     # After the final transformer layer, `y` holds the raw, un-normalized hidden state.
-    if getattr(cfg, "mhc_expansion_rate", 1) > 1:
-      if cfg.decoder_block == DecoderBlockType.DEEPSEEK4:
-        hidden_state = self.hc_head(y)
-      else:
-        # (batch, length, mhc_expansion_rate, emb_dim) --> (batch, length, emb_dim)
-        hidden_state = mhc_reduce(y)
-    else:
-      hidden_state = y
+    # For mHC models (e.g. DeepSeek-V4) it is deliberately left in its expanded 4D
+    # `[batch, length, mhc_expansion_rate, emb_dim]` form: downstream consumers such as the
+    # MTP block need the full parallel-stream state to stay faithful to the reference
+    # architecture. The collapse to 3D is deferred to `apply_output_head`, which owns it for
+    # every logit-producing path (main head, vLLM deferred head, MTP head).
+    hidden_state = y
 
     # When invoking from vLLM with RPA attention, logit computation is deferred to a later stage.
     if cfg.attention in ("vllm_rpa", "vllm_batched_rpa"):

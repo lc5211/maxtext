@@ -147,16 +147,22 @@ class _MockDecoderForMTP:
     self.config = config
     self.model_mode = MODEL_MODE_TRAIN
     self.last_normalize_y = None
+    self.last_reduce_mhc = None
 
   def _apply_embedding(self, _shared_embedding, input_ids, _position_ids, _deterministic, model_mode):
     """Returns a zero tensor with the correct embedding shape."""
     batch_size, seq_len = input_ids.shape
     return jnp.zeros((batch_size, seq_len, self.config.base_emb_dim), dtype=self.config.dtype)
 
-  def apply_output_head(self, _shared_embedding, hidden_state, _deterministic, model_mode, normalize_y=True):
+  def apply_output_head(
+      self, _shared_embedding, hidden_state, _deterministic, model_mode, normalize_y=True, reduce_mhc=True
+  ):
     """Returns a zero tensor with the correct logit shape."""
     self.last_normalize_y = normalize_y
-    batch_size, seq_len, _ = hidden_state.shape
+    self.last_reduce_mhc = reduce_mhc
+    # Unpack only the leading two axes so a 4D mHC state [batch, seq, streams, emb]
+    # is handled as gracefully as the standard 3D one.
+    batch_size, seq_len = hidden_state.shape[:2]
     return jnp.zeros((batch_size, seq_len, self.config.vocab_size), dtype=self.config.dtype)
 
 
