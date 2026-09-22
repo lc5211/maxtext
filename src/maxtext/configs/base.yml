@@ -54,6 +54,8 @@ enable_checkpointing: true
 save_checkpoint_on_start: true
 save_checkpoint_on_completion: true
 async_checkpointing: true
+# If true, saves optimizer state alongside model parameters in checkpoints.
+save_optimizer_state: true
 checkpoint_period: 10_000
 max_num_checkpoints_to_keep: None
 enable_continuous_checkpointing: false
